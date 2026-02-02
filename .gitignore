@@ -1,0 +1,43 @@
+#======安全隐患======
+#API Key 在这，提交等于送钱
+.env
+.env.*
+*.key
+secrets.json
+
+#======Python 编译垃圾======
+#解释器自动生成的字节码，没必要同步
+__pycache__/
+*.py[cod]
+*$py.class
+
+#======虚拟环境======
+#依赖库几百 MB，别人用 requirements.txt 装就行
+venv/
+.venv/
+env/
+ENV/
+anaconda/
+
+#======数据与素材======
+#有 setup_data.py 能随时拉数据，图跟 json 别往仓库塞
+data/images/
+data/annotations/*.json
+data/annotations/*.jsonl
+
+#======数据库与日志======
+#后面 SQLite 用的本地库文件
+*.sqlite3
+*.db
+#运行时日志
+*.log
+logs/
+
+#======IDE 配置======
+#个人配置，可能带本地路径
+.vscode/
+.idea/
+
+#======系统垃圾======
+.DS_Store
+Thumbs.db
