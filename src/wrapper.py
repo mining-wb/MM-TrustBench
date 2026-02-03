@@ -88,7 +88,7 @@ if __name__ == "__main__":
     wrapper = ModelWrapper()
     # 假路径和测试问题，验证接口能通
     result = wrapper.predict(
-        image_path="data/images/COCO_val2014_000000000042.jpg",
+        image_path="data\images\COCO_val2014_000000210789.jpg",
         question="这张图里有几个人？",
     )
     print(result)
