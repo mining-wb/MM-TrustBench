@@ -128,22 +128,21 @@ def run_analysis() -> None:
             f.write(json.dumps(d, ensure_ascii=False) + "\n")
     print(f"\n明细已写: {ANALYSIS_JSONL}（可据此人肉挑 3～5 个典型错例，记下图文件名）")
 
-    # 可选：画图
+    #画图
     try:
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
         _draw_charts(total, correct, fp, fn, label_no_count)
     except ImportError:
         pass
 
+
 def _draw_charts(total: int, correct: int, fp: int, fn: int, label_no_count: int) -> None:
-
     """
-
     正确 vs 错误 柱状图；错例中 幻觉(FP) vs 漏检(FN) 饼图。图存 data 目录。
-
+    绘图用到的 plt 在本函数内导入，避免作用域问题。
     """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
 
