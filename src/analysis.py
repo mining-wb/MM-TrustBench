@@ -128,5 +128,66 @@ def run_analysis() -> None:
             f.write(json.dumps(d, ensure_ascii=False) + "\n")
     print(f"\n明细已写: {ANALYSIS_JSONL}（可据此人肉挑 3～5 个典型错例，记下图文件名）")
 
+    # 可选：画图
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        _draw_charts(total, correct, fp, fn, label_no_count)
+    except ImportError:
+        pass
+
+def _draw_charts(total: int, correct: int, fp: int, fn: int, label_no_count: int) -> None:
+
+    """
+
+    正确 vs 错误 柱状图；错例中 幻觉(FP) vs 漏检(FN) 饼图。图存 data 目录。
+
+    """
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
+
+
+
+    # 正确 vs 错误
+
+    wrong = total - correct
+
+    ax1.bar(["正确", "错误"], [correct, wrong], color=["#2ecc71", "#e74c3c"])
+
+    ax1.set_ylabel("题数")
+
+    ax1.set_title("正确 vs 错误")
+
+
+
+    # 错例中：幻觉(FP) vs 漏检(FN) 比例
+
+    parts = [fp, fn]
+
+    labels = ["幻觉 (FP)", "漏检 (FN)"]
+
+    if fp + fn == 0:
+
+        parts = [1]
+
+        labels = ["无错例"]
+
+    ax2.pie(parts, labels=labels, autopct="%1.0f%%", startangle=90)
+
+    ax2.set_title("幻觉 vs 漏检 (错例)")
+
+
+
+    out_path = os.path.join(_PROJECT_ROOT, "data", "analysis_charts.png")
+
+    plt.tight_layout()
+
+    plt.savefig(out_path, dpi=120)
+
+    plt.close()
+
+    print(f"图表已保存: {out_path}")
+
 if __name__ == "__main__":
     run_analysis()
