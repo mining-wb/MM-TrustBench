@@ -32,16 +32,27 @@ def load_jsonl(path: str) -> list:
 def extract_yes_no(text: str) -> str:
     """
     把模型那一长串话洗成 yes 或 no。
-    按首出现的 yes/no 词（不区分大小写）取；洗不出来算 unknown。
+    先认显式的 yes/no 词；没有再根据「有/没有」的表述推断。
     """
     if not text or text.strip() == "Error":
         return "unknown"
     text_lower = text.strip().lower()
-    # 先找 yes，再找 no，避免 "no" 出现在 "nothing" 里被误判
+    # 1. 显式 yes/no 优先
     if re.search(r"\byes\b", text_lower):
         return "yes"
     if re.search(r"\bno\b", text_lower):
         return "no"
+    # 2. 模型明确说不确定，不强行判 yes/no
+    if re.search(r"cannot determine|cannot tell|unclear|I cannot (see|tell|determine)", text_lower):
+        return "unknown"
+    # 3. 明确否定表述：没看见、没有、不可见
+    if re.search(r"there is no|there are no|no \w+ (visible|in the image)|not visible|cannot see|isn't (a |any )|aren't (any )?", text_lower):
+        return "no"
+    # 4. 肯定表述：有、可见、appears to be
+    if re.search(r"there (is|are) (a |an |one |some |two |several )?\w+", text_lower):
+        return "yes"
+    if re.search(r"appears to be (a |an )?\w+|visible in the image|(is|are) visible", text_lower):
+        return "yes"
     return "unknown"
 
 
@@ -77,6 +88,7 @@ def run_analysis() -> None:
     correct = 0
     fp = 0  # 标准 no，模型 yes —— 幻觉
     fn = 0  # 标准 yes，模型 no —— 漏检
+    unknown_count = 0  # 洗不出 yes/no，算错但不归入 FP/FN
     label_no_count = 0  # 标准答案为 no 的题数，用于算幻觉率
 
     detail_rows = []
@@ -90,6 +102,8 @@ def run_analysis() -> None:
         is_correct = (pred != "unknown" and pred == gt)
         if is_correct:
             correct += 1
+        elif pred == "unknown":
+            unknown_count += 1
 
         if gt == "no":
             label_no_count += 1
@@ -119,6 +133,7 @@ def run_analysis() -> None:
     print(f"正确: {correct}  准确率 (Accuracy): {accuracy:.2%}")
     print(f"幻觉 (FP, 标准 no 却说 yes): {fp}  幻觉率: {hallucination_rate:.2%} (FP / 标准答案为 no 的题数)")
     print(f"漏检 (FN, 标准 yes 却说 no): {fn}")
+    print(f"无法判定 (unknown): {unknown_count}  （模型未给出明确 yes/no，算错题）")
     print("==============================")
 
     # 明细写 jsonl，方便开 Excel 或直接翻着找典型反例
