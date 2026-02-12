@@ -7,6 +7,7 @@ _src_dir = os.path.dirname(os.path.abspath(__file__))
 if _src_dir not in sys.path:
     sys.path.insert(0, _src_dir)
 from wrapper import ModelWrapper
+from trust_pipeline import TrustPipeline
 
 #======配置区======
 # 本脚本在 src/ 下，用 __file__ 推到项目根，这样无论从哪执行路径都对
@@ -63,6 +64,7 @@ def main() -> None:
     # 2. 断点续传：已写进结果文件的题不再跑
     done_keys = load_done_keys(OUTPUT_JSONL)
     wrapper = ModelWrapper()
+    pipeline = TrustPipeline(wrapper)
 
     # 3. 输出目录不存在时先建
     os.makedirs(os.path.dirname(OUTPUT_JSONL), exist_ok=True)
@@ -87,12 +89,18 @@ def main() -> None:
                 print(f"[{i+1}/{total}] skip: no image {image_path}")
                 continue
 
-            # 调模型
+            # 走证据+自检流水线
             print(f"[{i+1}/{total}] {image_path} | {question[:40]}...")
-            answer = wrapper.predict(image_path, question)
+            result = pipeline.process(image_path, question)
 
-            # 原题 + 模型回答 写一行
-            row = {**item, "model_answer": answer}
+            # 原题 + 原始回复 + 最终答案 + 证据/自检，写一行
+            row = {
+                **item,
+                "model_answer": result["raw"],
+                "final_answer": result["answer"],
+                "evidence": result.get("evidence", ""),
+                "self_check": result.get("self_check", ""),
+            }
             out_f.write(json.dumps(row, ensure_ascii=False) + "\n")
             out_f.flush()
             done_keys.add(key_str)

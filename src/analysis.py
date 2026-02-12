@@ -97,7 +97,12 @@ def run_analysis() -> None:
         gt_raw = row.get(label_key, "")
         gt = normalize_label(gt_raw)
         raw_answer = row.get("model_answer", "")
-        pred = extract_yes_no(raw_answer)
+        # main 若走了 TrustPipeline 会写 final_answer（yes/no/refused），直接用；否则从 model_answer 洗
+        if "final_answer" in row:
+            fa = row["final_answer"]
+            pred = "unknown" if fa == "refused" else fa
+        else:
+            pred = extract_yes_no(raw_answer)
 
         is_correct = (pred != "unknown" and pred == gt)
         if is_correct:

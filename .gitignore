@@ -25,6 +25,10 @@ data/images/
 data/annotations/*.json
 data/annotations/*.jsonl
 
+#======私人文档======
+#开发计划、工作文档等，不对外
+docs/
+
 #======数据库与日志======
 #后面 SQLite 用的本地库文件
 *.sqlite3
@@ -34,7 +38,7 @@ data/annotations/*.jsonl
 logs/
 
 #======IDE 配置======
-#个人配置，可能带本地路径
+#个人配置，带本地路径
 .vscode/
 .idea/
 

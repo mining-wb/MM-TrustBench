@@ -2,7 +2,7 @@ import re
 from typing import Dict, Any
 
 #======配置区======
-# 让模型按这三段输出，方便正则抠
+# 让模型按这三段输出，正则按这个抠
 EVIDENCE_HEAD = "Evidence:"
 SELF_CHECK_HEAD = "Self-check:"
 ANSWER_HEAD = "Answer:"
@@ -32,9 +32,9 @@ class TrustPipeline:
             "If you are uncertain or the image does not show enough, say Unsupported.\n"
             "3) Answer: Give only one word: yes, no, or Unsupported.\n\n"
             f"Question: {question}\n\n"
-            "Evidence:\n"
-            "Self-check:\n"
-            "Answer:"
+            f"{EVIDENCE_HEAD}\n"
+            f"{SELF_CHECK_HEAD}\n"
+            f"{ANSWER_HEAD}"
         )
 
     def _parse_response(self, raw: str) -> Dict[str, Any]:
@@ -50,14 +50,20 @@ class TrustPipeline:
             return {"answer": "refused", "evidence": evidence, "self_check": self_check, "raw": raw or ""}
 
         text = raw.strip()
-        # 不区分大小写，按段抠
-        ev_match = re.search(r"Evidence:\s*(.*?)(?=Self-check:|$)", text, re.DOTALL | re.IGNORECASE)
+        # 不区分大小写，按段抠，用配置区的常量拼正则
+        ev_pat = re.escape(EVIDENCE_HEAD) + r"\s*(.*?)(?=" + re.escape(SELF_CHECK_HEAD) + r"|$)"
+        ev_match = re.search(ev_pat, text, re.DOTALL | re.IGNORECASE)
         if ev_match:
             evidence = ev_match.group(1).strip()
-        sc_match = re.search(r"Self-check:\s*(.*?)(?=Answer:|$)", text, re.DOTALL | re.IGNORECASE)
+            # 模型有时在段末加 "2)" "3)"，顺手去掉
+            evidence = re.sub(r"\n+\s*\d+\)\s*$", "", evidence)
+        sc_pat = re.escape(SELF_CHECK_HEAD) + r"\s*(.*?)(?=" + re.escape(ANSWER_HEAD) + r"\s*|$)"
+        sc_match = re.search(sc_pat, text, re.DOTALL | re.IGNORECASE)
         if sc_match:
             self_check = sc_match.group(1).strip()
-        ans_match = re.search(r"Answer:\s*(\w+)", text, re.IGNORECASE)
+            self_check = re.sub(r"\n+\s*\d+\)\s*$", "", self_check)
+        ans_pat = re.escape(ANSWER_HEAD) + r"\s*(\w+)"
+        ans_match = re.search(ans_pat, text, re.IGNORECASE)
         if ans_match:
             a = ans_match.group(1).strip().lower()
             if a == "yes":
@@ -92,10 +98,9 @@ if __name__ == "__main__":
         sys.path.insert(0, _src)
     from wrapper import ModelWrapper
 
+    _root = os.path.dirname(_src)
+    test_img = os.path.join(_root, "data", "images", "COCO_val2014_000000210789.jpg")
     wrapper = ModelWrapper()
     pipeline = TrustPipeline(wrapper)
-    out = pipeline.process(
-        "data/images/COCO_val2014_000000210789.jpg",
-        "Is there a person in the image?",
-    )
+    out = pipeline.process(test_img, "Is there a person in the image?")
     print(out)
