@@ -1,3 +1,9 @@
+# 基本依赖
 requests
 python-dotenv
 matplotlib
+
+# FastAPI 服务化
+fastapi
+uvicorn
+pydantic
