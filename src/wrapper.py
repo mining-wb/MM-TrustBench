@@ -29,19 +29,28 @@ class ModelWrapper:
         if not self.api_key:
             raise ValueError("未找到 API_KEY，请在 .env 中配置")
 
-    def predict(self, image_path: str, question: str) -> str:
+    def predict(self, image_path: str | None = None, question: str = "", image_base64: str | None = None) -> str:
         """
-        传入图片路径和问题，请求视觉模型，返回模型回复的文本。
+        传入图片（路径或 base64 二选一）和问题，请求视觉模型，返回模型回复的文本。
         图片会按 base64 塞进 content，符合硅基流动视觉接口格式。
         请求失败或解析异常时返回 "Error"，不抛异常，避免整服务挂掉。
         """
-        # 1. 读本地图片，转 base64，拼成 data:image/xxx;base64,xxx
-        with open(image_path, "rb") as f:
-            img_b64 = base64.b64encode(f.read()).decode("utf-8")
-        # 按后缀猜 mime，常见 jpg/png
-        ext = os.path.splitext(image_path)[1].lower()
-        mime = "image/png" if ext == ".png" else "image/jpeg"
-        image_url = f"data:{mime};base64,{img_b64}"
+        # 1. 决定 image_url：有 base64 直接用，没有则读本地文件转 base64
+        if image_base64:
+            # 网络传过来的 base64 通常不带前缀，手动拼
+            raw = image_base64.strip()
+            if raw.startswith("data:"):
+                image_url = raw
+            else:
+                image_url = f"data:image/jpeg;base64,{raw}"
+        elif image_path:
+            with open(image_path, "rb") as f:
+                img_b64 = base64.b64encode(f.read()).decode("utf-8")
+            ext = os.path.splitext(image_path)[1].lower()
+            mime = "image/png" if ext == ".png" else "image/jpeg"
+            image_url = f"data:{mime};base64,{img_b64}"
+        else:
+            return "Error"
 
         # 2. 请求头：json + Bearer 鉴权
         headers = {

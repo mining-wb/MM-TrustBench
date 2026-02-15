@@ -80,12 +80,13 @@ class TrustPipeline:
 
         return {"answer": answer, "evidence": evidence, "self_check": self_check, "raw": raw}
 
-    def process(self, image_path: str, question: str) -> Dict[str, Any]:
+    def process(self, image_path: str | None = None, question: str = "", image_base64: str | None = None) -> Dict[str, Any]:
         """
         入口：拼 prompt → 调 wrapper → 解析三段 → 返回 answer（yes/no/refused）、evidence、self_check、raw。
+        图片二选一：image_path 或 image_base64，透传给 wrapper。
         """
         prompt = self._build_prompt(question)
-        raw = self.wrapper.predict(image_path, prompt)
+        raw = self.wrapper.predict(image_path=image_path, question=prompt, image_base64=image_base64)
         return self._parse_response(raw)
 
 
