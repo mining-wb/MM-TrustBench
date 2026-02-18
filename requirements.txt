@@ -7,3 +7,6 @@ matplotlib
 fastapi
 uvicorn
 pydantic
+
+# Streamlit 前端
+streamlit
