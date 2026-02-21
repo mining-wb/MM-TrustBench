@@ -163,6 +163,14 @@ def _draw_charts(total: int, correct: int, fp: int, fn: int, label_no_count: int
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    # 中文显示：多平台回退，matplotlib 会用第一个存在的字体
+    plt.rcParams["font.sans-serif"] = [
+        "Microsoft YaHei", "SimHei", "SimSun", "KaiTi",           # Windows
+        "PingFang SC", "Heiti SC", "STHeiti", "Arial Unicode MS", # Mac
+        "WenQuanYi Micro Hei", "Noto Sans CJK SC", "Droid Sans Fallback", # Linux
+        "sans-serif",
+    ]
+    plt.rcParams["axes.unicode_minus"] = False
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
 
