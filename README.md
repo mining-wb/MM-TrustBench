@@ -14,6 +14,7 @@
 2. **实时可视化评测台 (Online Interactive Service)**
    - 用 FastAPI 提供 RESTful 接口，Pydantic 约定入参出参。
    - 用 Streamlit 做前端：上传图片、输入问题，直接看模型的证据与自检结果。
+   - 在线评测结果写入 SQLite（`data/trustbench.db`），便于追溯。
 
 ---
 
@@ -34,9 +35,9 @@
 ## 技术栈 (Tech Stack)
 
 - **语言与模型**：Python 3.10，视觉模型走 OpenAI 兼容接口（如硅基流动 Qwen2.5-VL）
-- **后端**：FastAPI、Uvicorn、Pydantic
+- **后端**：FastAPI、Uvicorn、Pydantic、SQLAlchemy
 - **前端**：Streamlit、Requests
-- **数据与分析**：JSONL、Matplotlib
+- **数据与存储**：SQLite（评测记录）、JSONL、Matplotlib
 
 ---
 
@@ -90,6 +91,28 @@ python src/analysis.py
 
 ---
 
+## 系统架构 (Architecture)
+
+```mermaid
+flowchart TB
+  subgraph 在线服务
+    A[Streamlit 前端] -->|HTTP POST /api/v1/evaluate| B[FastAPI]
+    B --> C[TrustPipeline 证据+自检]
+    C --> D[Wrapper]
+    D -->|Base64/路径| E[视觉大模型 API]
+    B -->|写入| F[(SQLite)]
+  end
+  subgraph 离线流水线
+    G[setup_data.py] --> H[mini_pope.jsonl]
+    H --> I[main.py + TrustPipeline]
+    I --> J[prediction_results.jsonl]
+    J --> K[analysis.py]
+    K --> L[准确率 / 幻觉率 / 图表]
+  end
+```
+
+---
+
 ## 项目结构 (Project Structure)
 
 ```text
@@ -99,11 +122,13 @@ MM-TrustBench/
 ├── src/
 │   ├── api.py              # FastAPI 路由
 │   ├── schemas.py          # Pydantic 请求/响应模型
+│   ├── database.py         # SQLite 引擎与会话
+│   ├── models.py           # ORM 表（EvaluationRecord）
 │   ├── trust_pipeline.py   # 证据链 + 自检流水线
 │   ├── wrapper.py          # 模型 API 封装（支持路径与 Base64）
 │   ├── main.py             # 批量评测脚本
 │   └── analysis.py         # 阅卷、指标与画图
-├── data/                   # 数据与结果（部分被 gitignore）
+├── data/                   # 数据、结果与 trustbench.db（部分被 gitignore）
 ├── setup_data.py           # POPE/COCO 数据下载
 ├── requirements.txt
 └── README.md
@@ -113,5 +138,4 @@ MM-TrustBench/
 
 ## 后续计划 (TODO)
 
-- [ ] 接入 SQLite（或 SQLAlchemy/ORM），持久化评测记录。
-- [ ] 支持更多视觉模型（如 GPT-4o、Claude 等）做横向对比。
+- [ ] 支持更多视觉模型（如 GPT-4o、Claude 等）做横向对比

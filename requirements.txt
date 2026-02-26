@@ -10,3 +10,6 @@ pydantic
 
 # Streamlit 前端
 streamlit
+
+# 数据库
+sqlalchemy

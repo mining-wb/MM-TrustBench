@@ -3,9 +3,14 @@ from fastapi import FastAPI, HTTPException
 from .schemas import EvaluateRequest, EvaluateResponse
 from .wrapper import ModelWrapper
 from .trust_pipeline import TrustPipeline
+from .database import get_engine, SessionLocal, Base
+from .models import EvaluationRecord
 
 #======应用入口======
 app = FastAPI(title="MM-TrustBench API", version="0.1.0")
+
+# 启动时建表（库不存在则自动创建）
+Base.metadata.create_all(bind=get_engine())
 
 # 引擎只实例化一次，复用
 _wrapper = ModelWrapper()
@@ -30,11 +35,30 @@ def evaluate(request: EvaluateRequest):
             question=request.question,
             image_base64=request.image_base64,
         )
-        return EvaluateResponse(
+        resp = EvaluateResponse(
             final_answer=result["answer"],
             evidence=result.get("evidence", ""),
             self_check=result.get("self_check", ""),
         )
+        # 写入数据库
+        if request.image_base64:
+            image_stored = f"[base64, len={len(request.image_base64)}]"
+        else:
+            image_stored = request.image_path or ""
+        record = EvaluationRecord(
+            question=request.question,
+            image_base64=image_stored,
+            final_answer=result["answer"],
+            evidence=result.get("evidence", ""),
+            self_check=result.get("self_check", ""),
+        )
+        db = SessionLocal()
+        try:
+            db.add(record)
+            db.commit()
+        finally:
+            db.close()
+        return resp
     except Exception as e:
         print(f"Evaluate error: {e}")
         raise HTTPException(status_code=500, detail="模型调用失败")
