@@ -62,6 +62,8 @@ API_URL=https://api.siliconflow.cn/v1/chat/completions
 MODEL_NAME=Pro/Qwen/Qwen2.5-VL-7B-Instruct
 ```
 
+接口异常时统一返回 JSON：`{ "code": 状态码, "message": "说明", "data": null }`。
+
 ### 3. 运行方式 A：可视化评测台 (Streamlit + FastAPI)
 
 开两个终端：
@@ -74,7 +76,9 @@ uvicorn src.api:app --reload
 streamlit run app.py
 ```
 
-浏览器访问 `http://localhost:8501`。
+浏览器访问 `http://localhost:8501`。接口文档与自测：启动后端后访问 `http://localhost:8000/docs`。
+
+**主要接口**：`POST /api/v1/evaluate` 单条评测（同步）；`POST /api/v1/evaluate/batch` 批量评测（异步，返回 `task_id`）；`GET /api/v1/task/{task_id}` 轮询任务状态与结果；`GET /api/v1/history` 查询最近 N 条任务记录。
 
 ### 4. 运行方式 B：自动化评测流水线 (Benchmark)
 
@@ -93,14 +97,18 @@ python src/analysis.py
 
 ## 系统架构 (Architecture)
 
+- **在线服务**：Streamlit 通过 HTTP 调 FastAPI，不直连业务代码；FastAPI 内 TrustPipeline + Wrapper 调视觉模型；评测结果写入 SQLite（主表 EvaluationTask + 从表 EvaluationRecord）。
+- **批量评测**：`POST /api/v1/evaluate/batch` 立即返回 `task_id`，后台执行评测；前端轮询 `GET /api/v1/task/{task_id}` 查进度与结果。
+
 ```mermaid
 flowchart TB
   subgraph 在线服务
-    A[Streamlit 前端] -->|HTTP POST /api/v1/evaluate| B[FastAPI]
+    A[Streamlit 前端] -->|POST /api/v1/evaluate 或 /evaluate/batch| B[FastAPI]
     B --> C[TrustPipeline 证据+自检]
     C --> D[Wrapper]
     D -->|Base64/路径| E[视觉大模型 API]
-    B -->|写入| F[(SQLite)]
+    B -->|写入| F[(SQLite Task+Record)]
+    A -->|GET /api/v1/history 或 /task/任务id| B
   end
   subgraph 离线流水线
     G[setup_data.py] --> H[mini_pope.jsonl]
@@ -123,7 +131,7 @@ MM-TrustBench/
 │   ├── api.py              # FastAPI 路由
 │   ├── schemas.py          # Pydantic 请求/响应模型
 │   ├── database.py         # SQLite 引擎与会话
-│   ├── models.py           # ORM 表（EvaluationRecord）
+│   ├── models.py           # ORM（EvaluationTask 主表 + EvaluationRecord 从表）
 │   ├── trust_pipeline.py   # 证据链 + 自检流水线
 │   ├── wrapper.py          # 模型 API 封装（支持路径与 Base64）
 │   ├── main.py             # 批量评测脚本
