@@ -1,10 +1,11 @@
+import os
 import base64
 import requests
 import streamlit as st
 
 #======配置区======
-# 后端 API 地址，本地跑 uvicorn 时用这个
-API_BASE = "http://127.0.0.1:8000"
+# 后端 API 地址；Docker 里设 API_BASE=http://backend:8000
+API_BASE = os.getenv("API_BASE", "http://127.0.0.1:8000")
 API_EVALUATE_URL = f"{API_BASE}/api/v1/evaluate"
 API_HISTORY_URL = f"{API_BASE}/api/v1/history"
 
@@ -15,6 +16,7 @@ st.title("MM-TrustBench：视觉大模型幻觉评测台")
 # 单条评测
 uploaded_file = st.file_uploader("上传图片", type=["png", "jpg", "jpeg"])
 question = st.text_input("输入问题", placeholder="例如：图里有几个人？")
+answer_type = st.radio("答案类型", ["yes_no", "open"], format_func=lambda x: "仅 yes/no（幻觉评测）" if x == "yes_no" else "开放回答（数字或短句）", horizontal=True)
 run_btn = st.button("开始评测")
 
 #======联调 + 展示======
@@ -25,7 +27,7 @@ if run_btn:
         # 图片转 base64
         img_bytes = uploaded_file.read()
         img_b64 = base64.b64encode(img_bytes).decode("utf-8")
-        payload = {"question": question.strip(), "image_base64": img_b64}
+        payload = {"question": question.strip(), "image_base64": img_b64, "answer_type": answer_type}
 
         with st.spinner("评测中..."):
             try:
@@ -43,7 +45,9 @@ if run_btn:
             st.image(uploaded_file, use_container_width=True)
         with col_right:
             ans = data.get("final_answer", "")
-            if ans == "yes":
+            if answer_type == "open":
+                st.success(f"最终答案：{ans}")
+            elif ans == "yes":
                 st.success(f"最终答案：{ans}")
             elif ans == "no":
                 st.info(f"最终答案：{ans}")
@@ -83,8 +87,11 @@ try:
                         st.success(f"Q: {q} → {ans}")
                     elif ans == "no":
                         st.info(f"Q: {q} → {ans}")
-                    else:
+                    elif ans == "refused":
                         st.error(f"Q: {q} → {ans}（拒答）")
+                    else:
+                        # 开放回答（数字或短句），直接展示答案
+                        st.success(f"Q: {q} → {ans}")
                     ev = r.get("evidence") or ""
                     st.caption("证据: " + (ev[:200] + "…" if len(ev) > 200 else ev))
 except requests.RequestException as e:

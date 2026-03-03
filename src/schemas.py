@@ -2,11 +2,23 @@ from datetime import datetime
 from pydantic import BaseModel
 
 #======请求体======
-# 评测接口入参：问题必填，图片二选一（本地路径或 base64）
+# 评测接口入参：问题必填，图片二选一；model_id、answer_type 可选。answer_type=yes_no 仅 yes/no，open 可数字或短句
 class EvaluateRequest(BaseModel):
     question: str
     image_path: str | None = None
     image_base64: str | None = None
+    model_id: str | None = "default"
+    answer_type: str | None = "yes_no"  # yes_no | open
+
+
+#======可用模型列表======
+class ModelItem(BaseModel):
+    id: str
+    name: str  # 展示名，如模型名或 id
+
+
+class ModelsResponse(BaseModel):
+    models: list[ModelItem]
 
 
 #======响应体======
@@ -40,7 +52,7 @@ class HistoryResponse(BaseModel):
 
 
 #======批量评测======
-# 单条入参与 EvaluateRequest 一致，图片二选一
+# 单条入参与 EvaluateRequest 一致，图片二选一；可带 model_id
 class BatchItemRequest(BaseModel):
     question: str
     image_path: str | None = None
@@ -49,6 +61,8 @@ class BatchItemRequest(BaseModel):
 
 class BatchEvaluateRequest(BaseModel):
     items: list[BatchItemRequest]
+    model_id: str | None = "default"
+    answer_type: str | None = "yes_no"
 
 
 # 立即返回，供前端轮询

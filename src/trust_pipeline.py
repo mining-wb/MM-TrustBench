@@ -21,10 +21,21 @@ class TrustPipeline:
         """
         self.wrapper = wrapper
 
-    def _build_prompt(self, question: str) -> str:
+    def _build_prompt(self, question: str, answer_type: str = "yes_no") -> str:
         """
-        拼成带指令的完整 prompt，要求模型按 Evidence / Self-check / Answer 三段输出。
+        拼成带指令的完整 prompt。answer_type 为 yes_no 时只答 yes/no/Unsupported；为 open 时可答数字或短句。
         """
+        if answer_type == "open":
+            return (
+                "Follow this format exactly.\n"
+                "1) Evidence: Briefly describe what you see in the image relevant to the question.\n"
+                "2) Self-check: Does the evidence support a clear answer? If uncertain, say Unsupported.\n"
+                "3) Answer: Give a direct, concise answer (e.g. a number, a short phrase). If Unsupported, say so.\n\n"
+                f"Question: {question}\n\n"
+                f"{EVIDENCE_HEAD}\n"
+                f"{SELF_CHECK_HEAD}\n"
+                f"{ANSWER_HEAD}"
+            )
         return (
             "Follow this format exactly.\n"
             "1) Evidence: Briefly describe what you see in the image relevant to the question.\n"
@@ -37,10 +48,10 @@ class TrustPipeline:
             f"{ANSWER_HEAD}"
         )
 
-    def _parse_response(self, raw: str) -> Dict[str, Any]:
+    def _parse_response(self, raw: str, answer_type: str = "yes_no") -> Dict[str, Any]:
         """
         从模型回复里抠 Evidence、Self-check、Answer。
-        若解析不到或 Answer 为 Unsupported，则 answer 置为 refused。
+        yes_no 时 answer 仅为 yes/no/refused；open 时为 Answer 段整段文本，Unsupported 则 refused。
         """
         evidence = ""
         self_check = ""
@@ -50,18 +61,30 @@ class TrustPipeline:
             return {"answer": "refused", "evidence": evidence, "self_check": self_check, "raw": raw or ""}
 
         text = raw.strip()
-        # 不区分大小写，按段抠，用配置区的常量拼正则
         ev_pat = re.escape(EVIDENCE_HEAD) + r"\s*(.*?)(?=" + re.escape(SELF_CHECK_HEAD) + r"|$)"
         ev_match = re.search(ev_pat, text, re.DOTALL | re.IGNORECASE)
         if ev_match:
             evidence = ev_match.group(1).strip()
-            # 模型有时在段末加 "2)" "3)"，顺手去掉
             evidence = re.sub(r"\n+\s*\d+\)\s*$", "", evidence)
         sc_pat = re.escape(SELF_CHECK_HEAD) + r"\s*(.*?)(?=" + re.escape(ANSWER_HEAD) + r"\s*|$)"
         sc_match = re.search(sc_pat, text, re.DOTALL | re.IGNORECASE)
         if sc_match:
             self_check = sc_match.group(1).strip()
             self_check = re.sub(r"\n+\s*\d+\)\s*$", "", self_check)
+
+        if answer_type == "open":
+            # Answer 段取到结尾或下一段，整段作为答案；若为 Unsupported 则 refused
+            ans_pat = re.escape(ANSWER_HEAD) + r"\s*(.+?)(?=\n\n|$)"
+            ans_match = re.search(ans_pat, text, re.DOTALL | re.IGNORECASE)
+            if ans_match:
+                a = ans_match.group(1).strip()
+                if re.search(r"\bunsupported\b", a, re.IGNORECASE):
+                    answer = "refused"
+                else:
+                    answer = a.split("\n")[0].strip() or "refused"
+            return {"answer": answer, "evidence": evidence, "self_check": self_check, "raw": raw}
+
+        # yes_no：只认一个词
         ans_pat = re.escape(ANSWER_HEAD) + r"\s*(\w+)"
         ans_match = re.search(ans_pat, text, re.IGNORECASE)
         if ans_match:
@@ -70,24 +93,26 @@ class TrustPipeline:
                 answer = "yes"
             elif a == "no":
                 answer = "no"
-            # else 保持 refused（含 Unsupported 或乱写）
-
-        # 自检里明确说不支持，或 Answer 段不是 yes/no，都算拒答
         if answer not in ("yes", "no"):
             answer = "refused"
         elif "unsupported" in self_check.lower():
             answer = "refused"
-
         return {"answer": answer, "evidence": evidence, "self_check": self_check, "raw": raw}
 
-    def process(self, image_path: str | None = None, question: str = "", image_base64: str | None = None) -> Dict[str, Any]:
+    def process(
+        self,
+        image_path: str | None = None,
+        question: str = "",
+        image_base64: str | None = None,
+        answer_type: str = "yes_no",
+    ) -> Dict[str, Any]:
         """
-        入口：拼 prompt → 调 wrapper → 解析三段 → 返回 answer（yes/no/refused）、evidence、self_check、raw。
+        入口：拼 prompt → 调 wrapper → 解析三段。answer_type 为 yes_no 时 answer 仅 yes/no/refused，为 open 时可数字或短句。
         图片二选一：image_path 或 image_base64，透传给 wrapper。
         """
-        prompt = self._build_prompt(question)
+        prompt = self._build_prompt(question, answer_type=answer_type)
         raw = self.wrapper.predict(image_path=image_path, question=prompt, image_base64=image_base64)
-        return self._parse_response(raw)
+        return self._parse_response(raw, answer_type=answer_type)
 
 
 #======自测======

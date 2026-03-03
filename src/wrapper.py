@@ -17,17 +17,21 @@ IMAGE_DETAIL = "low"
 class ModelWrapper:
     """
     封装视觉模型的 HTTP 调用。
-    读 .env 里的 Key 和 URL，用 requests.post 发请求；图片读本地文件转 base64 塞进消息。
+    可传 api_key/url/model 构造，不传则从环境变量读默认一组。
+    图片读本地文件转 base64 塞进消息。
     """
 
-    def __init__(self) -> None:
-        # 从环境变量拿 Key、接口地址、模型名（.env 里是 MODEL_NAME）
-        self.api_key = os.getenv("API_KEY")
-        self.api_url = os.getenv("API_URL")
-        self.model = os.getenv("MODEL_NAME", "Pro/Qwen/Qwen2.5-VL-7B-Instruct")
-        # 没 Key 没法调，直接报错
+    def __init__(
+        self,
+        api_key: str | None = None,
+        api_url: str | None = None,
+        model: str | None = None,
+    ) -> None:
+        self.api_key = api_key or os.getenv("API_KEY")
+        self.api_url = api_url or os.getenv("API_URL")
+        self.model = model or os.getenv("MODEL_NAME", "Pro/Qwen/Qwen2.5-VL-7B-Instruct")
         if not self.api_key:
-            raise ValueError("未找到 API_KEY，请在 .env 中配置")
+            raise ValueError("未找到 API_KEY，请在 .env 中配置或传入构造参数")
 
     def predict(self, image_path: str | None = None, question: str = "", image_base64: str | None = None) -> str:
         """
@@ -89,6 +93,26 @@ class ModelWrapper:
             # 401/429/超时/解析错等，打日志，返回固定字符串，不崩进程
             print(f"Error calling model API: {e}")
             return "Error"
+
+
+#======多模型配置======
+# 从 env 读多组：默认 API_KEY/API_URL/MODEL_NAME；第二组 API_KEY_2/API_URL_2/MODEL_NAME_2，以此类推
+def get_available_wrappers() -> list[tuple[str, "ModelWrapper"]]:
+    """
+    返回 [(model_id, wrapper), ...]，至少包含 default（若配置了 API_KEY）。
+    """
+    out: list[tuple[str, ModelWrapper]] = []
+    # 默认一组
+    if os.getenv("API_KEY"):
+        out.append(("default", ModelWrapper()))
+    for i in range(2, 11):
+        key = os.getenv(f"API_KEY_{i}")
+        if not key:
+            continue
+        url = os.getenv(f"API_URL_{i}") or os.getenv("API_URL")
+        name = os.getenv(f"MODEL_NAME_{i}") or os.getenv("MODEL_NAME", "")
+        out.append((str(i), ModelWrapper(api_key=key, api_url=url, model=name)))
+    return out
 
 
 #======自测======

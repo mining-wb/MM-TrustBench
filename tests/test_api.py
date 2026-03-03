@@ -26,13 +26,15 @@ def test_evaluate_missing_image():
 
 
 #====== evaluate：mock 流水线返回 200 ======
-@patch("src.api._pipeline")
-def test_evaluate_success(mock_pipeline):
-    mock_pipeline.process.return_value = {
+@patch("src.api._get_pipeline")
+def test_evaluate_success(mock_get_pipeline):
+    mock_pipe = mock_get_pipeline.return_value
+    mock_pipe.process.return_value = {
         "answer": "yes",
         "evidence": "I see a cat.",
         "self_check": "Evidence supports yes.",
     }
+    mock_pipe.wrapper.model = "test-model"
     resp = client.post(
         "/api/v1/evaluate",
         json={"question": "图里有猫吗？", "image_base64": "fake_base64_data"},
@@ -58,3 +60,12 @@ def test_history_returns_tasks():
     data = resp.json()
     assert "tasks" in data
     assert isinstance(data["tasks"], list)
+
+
+#====== 可用模型列表 ======
+def test_models_list():
+    resp = client.get("/api/v1/models")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "models" in data
+    assert isinstance(data["models"], list)

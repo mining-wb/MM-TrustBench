@@ -14,8 +14,10 @@ from .schemas import (
     BatchEvaluateResponse,
     TaskStatusResponse,
     TaskRecordItem,
+    ModelsResponse,
+    ModelItem,
 )
-from .wrapper import ModelWrapper
+from .wrapper import ModelWrapper, get_available_wrappers
 from .trust_pipeline import TrustPipeline
 from sqlalchemy.orm import joinedload
 from .database import get_engine, SessionLocal, Base
@@ -54,15 +56,30 @@ def general_exception_handler(request: Request, exc: Exception):
 # 启动时建表（库不存在则自动创建）
 Base.metadata.create_all(bind=get_engine())
 
-# 引擎只实例化一次，复用
-_wrapper = ModelWrapper()
-_pipeline = TrustPipeline(_wrapper)
+# 多模型：model_id -> pipeline，至少有一组才能跑
+_pipelines: dict[str, TrustPipeline] = {}
+for mid, wr in get_available_wrappers():
+    _pipelines[mid] = TrustPipeline(wr)
+if not _pipelines:
+    # 测试环境可能只有 API_KEY=test_key，仍建 default
+    try:
+        _pipelines["default"] = TrustPipeline(ModelWrapper())
+    except ValueError:
+        pass
 
 
-def _run_batch_evaluate(task_id_uuid: str, items: list[dict]) -> None:
+def _get_pipeline(model_id: str) -> TrustPipeline | None:
+    return _pipelines.get(model_id or "default")
+
+
+def _run_batch_evaluate(task_id_uuid: str, items: list[dict], model_id: str = "default", answer_type: str = "yes_no") -> None:
     """
     后台执行批量评测：按 task_id 找到 Task，逐条跑 pipeline 写 Record，最后更新 Task 状态与耗时。
     """
+    pipeline = _get_pipeline(model_id)
+    if not pipeline:
+        logger.warning("batch 未找到 model_id=%s", model_id)
+        return
     db = SessionLocal()
     try:
         task = db.query(EvaluationTask).filter(EvaluationTask.task_id == task_id_uuid).first()
@@ -72,10 +89,11 @@ def _run_batch_evaluate(task_id_uuid: str, items: list[dict]) -> None:
         t0 = time.perf_counter()
         for i, it in enumerate(items):
             try:
-                result = _pipeline.process(
+                result = pipeline.process(
                     image_path=it.get("image_path"),
                     question=it.get("question", ""),
                     image_base64=it.get("image_base64"),
+                    answer_type=answer_type,
                 )
                 if it.get("image_base64"):
                     img_stored = f"[base64, len={len(it['image_base64'])}]"
@@ -119,17 +137,34 @@ def ping():
 
 
 #======评测接口======
+@app.get("/api/v1/models", response_model=ModelsResponse)
+def list_models():
+    """列出可用模型 id 与展示名，供前端下拉选择。"""
+    models = [
+        ModelItem(id=mid, name=getattr(p.wrapper, "model", mid) or mid)
+        for mid, p in _pipelines.items()
+    ]
+    return ModelsResponse(models=models)
+
+
 @app.post("/api/v1/evaluate", response_model=EvaluateResponse)
 def evaluate(request: EvaluateRequest):
     if not request.image_path and not request.image_base64:
         raise HTTPException(status_code=400, detail="必须提供图片路径或Base64")
+    pipeline = _get_pipeline(request.model_id or "default")
+    if not pipeline:
+        raise HTTPException(status_code=400, detail=f"未知 model_id: {request.model_id}，请用 GET /api/v1/models 查看可用模型")
     t0 = time.perf_counter()
-    logger.info("evaluate 请求: question=%s", request.question[:50] if request.question else "")
+    logger.info("evaluate 请求: question=%s, model_id=%s", request.question[:50] if request.question else "", request.model_id)
+    answer_type = (request.answer_type or "yes_no").strip().lower()
+    if answer_type not in ("yes_no", "open"):
+        answer_type = "yes_no"
     try:
-        result = _pipeline.process(
+        result = pipeline.process(
             image_path=request.image_path,
             question=request.question,
             image_base64=request.image_base64,
+            answer_type=answer_type,
         )
         elapsed = time.perf_counter() - t0
         logger.info("evaluate 完成: answer=%s, 耗时=%.2fs", result.get("answer"), elapsed)
@@ -148,7 +183,7 @@ def evaluate(request: EvaluateRequest):
             task = EvaluationTask(
                 task_id=str(uuid.uuid4()),
                 status="completed",
-                model_name=getattr(_wrapper, "model", None),
+                model_name=getattr(pipeline.wrapper, "model", None),
                 total_duration_sec=round(elapsed),
             )
             db.add(task)
@@ -177,12 +212,16 @@ def evaluate(request: EvaluateRequest):
 def evaluate_batch(request: BatchEvaluateRequest, background_tasks: BackgroundTasks):
     if not request.items:
         raise HTTPException(status_code=400, detail="items 不能为空")
+    model_id = request.model_id or "default"
+    pipeline = _get_pipeline(model_id)
+    if not pipeline:
+        raise HTTPException(status_code=400, detail=f"未知 model_id: {model_id}，请用 GET /api/v1/models 查看可用模型")
     db = SessionLocal()
     try:
         task = EvaluationTask(
             task_id=str(uuid.uuid4()),
             status="processing",
-            model_name=getattr(_wrapper, "model", None),
+            model_name=getattr(pipeline.wrapper, "model", None),
         )
         db.add(task)
         db.commit()
@@ -197,8 +236,11 @@ def evaluate_batch(request: BatchEvaluateRequest, background_tasks: BackgroundTa
             "image_path": it.image_path,
             "image_base64": it.image_base64,
         })
-    background_tasks.add_task(_run_batch_evaluate, task_id_uuid, items_payload)
-    logger.info("batch 已提交: task_id=%s, 共 %d 条", task_id_uuid, len(items_payload))
+    answer_type = (request.answer_type or "yes_no").strip().lower()
+    if answer_type not in ("yes_no", "open"):
+        answer_type = "yes_no"
+    background_tasks.add_task(_run_batch_evaluate, task_id_uuid, items_payload, model_id, answer_type)
+    logger.info("batch 已提交: task_id=%s, model_id=%s, 共 %d 条", task_id_uuid, model_id, len(items_payload))
     return BatchEvaluateResponse(task_id=task_id_uuid, status="processing")
 
 
