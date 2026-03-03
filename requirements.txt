@@ -13,3 +13,6 @@ streamlit
 
 # 数据库
 sqlalchemy
+
+# 测试
+pytest
