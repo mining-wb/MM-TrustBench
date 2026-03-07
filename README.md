@@ -152,27 +152,9 @@ python -m pytest tests/ -v
 
 ## 系统架构 (Architecture)
 
-- **在线服务**：Streamlit 通过 HTTP 调 FastAPI，不直连业务代码；FastAPI 内 TrustPipeline + Wrapper 调视觉模型；评测结果写入 SQLite（主表 EvaluationTask + 从表 EvaluationRecord）。
-- **批量评测**：`POST /api/v1/evaluate/batch` 立即返回 `task_id`，后台执行评测；前端轮询 `GET /api/v1/task/{task_id}` 查进度与结果。
+在线服务：Streamlit 通过 HTTP 调用 FastAPI（单条/批量评测、历史与任务查询），FastAPI 内 TrustPipeline + Wrapper 调用视觉大模型，结果写入 SQLite。离线流水线：setup_data 生成 POPE 数据，main.py 批量评测落盘，analysis.py 阅卷并输出指标图表。
 
-```mermaid
-flowchart TB
-  subgraph 在线服务
-    A[Streamlit 前端] -->|POST /api/v1/evaluate 或 /evaluate/batch| B[FastAPI]
-    B --> C[TrustPipeline 证据+自检]
-    C --> D[Wrapper]
-    D -->|Base64/路径| E[视觉大模型 API]
-    B -->|写入| F[(SQLite Task+Record)]
-    A -->|GET /api/v1/history 或 /task/任务id| B
-  end
-  subgraph 离线流水线
-    G[setup_data.py] --> H[mini_pope.jsonl]
-    H --> I[main.py + TrustPipeline]
-    I --> J[prediction_results.jsonl]
-    J --> K[analysis.py]
-    K --> L[准确率 / 幻觉率 / 图表]
-  end
-```
+![系统架构图](./assets/architecture.png)
 
 ---
 
